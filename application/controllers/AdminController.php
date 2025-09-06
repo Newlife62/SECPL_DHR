@@ -699,10 +699,49 @@ class AdminController extends CI_Controller {
 	}
 	
 	 public function QAReport(){
-        $data = $this->AdminM->get_dhr_qa_details();
+        // Get employees list for the view
+        $data['employees'] = $this->AdminM->get_employees_list();
         $this->load->view('templates/Header');
 		$this->load->view('Admin/QAReport',$data);
         $this->load->view('templates/Footer');
+	}
+	
+	public function QAReportData(){
+        // Server-side DataTable processing for QA Report
+        $draw = intval($this->input->post("draw"));
+        $start = intval($this->input->post("start"));
+        $length = intval($this->input->post("length"));
+        $search = $this->input->post("search")["value"];
+        $order_column = $this->input->post("order")[0]["column"];
+        $order_dir = $this->input->post("order")[0]["dir"];
+        
+        // Define column names for ordering
+        $columns = array(
+            0 => 'o.id',
+            1 => 'o.stage',
+            2 => 'o.dhr',
+            3 => 'o.dhr_issued_date_qa',
+            4 => 'o.batchorlot',
+            5 => 'o.product_description',
+            6 => 'o.manufacturing_date',
+            7 => 'o.expiry_date'
+        );
+        
+        $order_column_name = isset($columns[$order_column]) ? $columns[$order_column] : 'o.id';
+        
+        // Get data from model
+        $data = $this->AdminM->get_qa_report_datatable($start, $length, $search, $order_column_name, $order_dir);
+        $total_records = $this->AdminM->get_qa_report_total_count();
+        $filtered_records = $this->AdminM->get_qa_report_filtered_count($search);
+        
+        $response = array(
+            "draw" => $draw,
+            "recordsTotal" => $total_records,
+            "recordsFiltered" => $filtered_records,
+            "data" => $data
+        );
+        
+        echo json_encode($response);
 	}
 	
 	public function order_form_dhr_check(){
