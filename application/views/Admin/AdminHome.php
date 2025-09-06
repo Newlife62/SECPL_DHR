@@ -15,9 +15,9 @@
                 $stage_counts = array();
                 for($i = 1; $i <= 4; $i++) {
                     $this->db->select('count(*) as stage_count')
-                             ->from('dhr_records')
-                             ->where('stage_no', $i)
-                             ->where('status', 'active');
+                             ->from('stage_one_dhr_order_information')
+                             ->where('stage', 'stage_'.$i)
+                             ->where('removed', 0);
                     $result = $this->db->get();
                     $stage_counts[$i] = $result->row_array()['stage_count'] ?? 0;
                 }
