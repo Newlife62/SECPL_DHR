@@ -2076,6 +2076,174 @@ class AdminM extends CI_Model {
         }
     }
     
+    function get_employees_list(){
+        $employees = $this->db
+                            ->select('e.*, p.pos_name designation')
+                            ->from('employees e')
+                            ->join('positions p','p.pos_id=e.pos_id')
+                            ->get();  
+        $employs = array();
+        foreach($employees->result_array() as $employee){
+            $employs[$employee['id']] = $employee['employee_name'];
+        }             
+        return $employs;
+    }
+    
+    function get_qa_report_datatable($start, $length, $search, $order_column, $order_dir){
+        // Base query for QA Report data
+        $this->db->select("
+                            o.id,
+                            o.stage,
+                            o.dhr dhr_number,
+                            CASE 
+                                WHEN o.dhr_issued_date_qa = '0000-00-00' OR o.dhr_issued_date_qa IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(o.dhr_issued_date_qa, '%d-%m-%Y') 
+                            END AS dhr_issued_date_qa,
+                            o.batchorlot batch_number,
+                            o.product_description,
+                            CASE 
+                                WHEN o.manufacturing_date = '0000-00-00' OR o.manufacturing_date IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(o.manufacturing_date, '%d-%m-%Y') 
+                            END AS manufactured_date,
+                            CASE 
+                                WHEN o.expiry_date = '0000-00-00' OR o.expiry_date IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(o.expiry_date, '%d-%m-%Y') 
+                            END AS expiry_date,
+                            CASE 
+                                WHEN o.dhr_received_date_production = '0000-00-00' OR o.dhr_received_date_production IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(o.dhr_received_date_production, '%d-%m-%Y') 
+                            END AS dhr_received_date_production,
+                            CASE 
+                                WHEN o.date_of_commencement = '0000-00-00' OR o.date_of_commencement IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(o.date_of_commencement, '%d-%m-%Y') 
+                            END AS date_of_batch_commencement,
+                            CASE 
+                                WHEN o.date_of_completion = '0000-00-00' OR o.date_of_completion IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(o.date_of_completion, '%d-%m-%Y') 
+                            END AS date_of_completion,
+                            o.itemcode item_code,
+                            GROUP_CONCAT(DISTINCT b.item_lot_number SEPARATOR ', ') as input_batch_number,
+                            o.order_quantity ordered_quantity,
+                            o.production_quantity,
+                            
+                            GROUP_CONCAT(
+                                DISTINCT CONCAT(
+                                    m.mp_seq_number, ' - ',
+                                    m.mp_process_description, ' (',
+                                    m.mp_wi_number, ', ',
+                                    m.mp_equipment_number, ', ',
+                                    m.mp_start_datetime, ', ',
+                                    m.mp_end_datetime, ', ',
+                                    m.mp_manufactured_qunatity, ', ',
+                                    m.mp_good_qunatity, ', ',
+                                    m.mp_rejected_qunatity, ', ',
+                                    m.mp_done_by, ', ',
+                                    m.mp_verified_by, ', ',
+                                    m.mp_line_clearance_by, ', ',
+                                    m.mp_remarks, ')'
+                                ) SEPARATOR ' | '
+                            ) AS manufacturing_processes,
+                        
+                            GROUP_CONCAT(
+                                DISTINCT CONCAT(
+                                    q.qcp_seq_number, ' - ',
+                                    q.qcp_process_inspection_or_testing_description, ' (',
+                                    q.qcp_wi_number, ', ',
+                                    q.qcp_qir_number_or_report_number, ', ',
+                                    q.qcp_sample_quantity, ', ',
+                                    q.qcp_pass_or_fail, ', ',
+                                    q.qcp_verified_by, ', ',
+                                    q.qcp_verified_date, ', ',
+                                    q.qcp_scanned_file, ')'
+                                ) SEPARATOR ' | '
+                            ) AS quality_control_processes,
+                            
+                            fgtn.transferred_quantity,
+                            (fgr.archive_samples_quantity+fgr.ep_archive_samples_quantity+fgr.production_archive_samples_quantity+fgr.penetration_samples_quantity+fgr.control_samples_quantity) AS archive_samples_quantity,
+                            fgr.yield_percentage,
+                            fgr.production_verified_by AS production_head_verified,
+                            fgr.checked_by_quality_control AS qc_head_clearance,
+                            qaar.quantity_released_for_dispatch,
+                            qaar.signature,
+                            CASE 
+                                WHEN qaar.date_of_release = '0000-00-00' OR qaar.date_of_release IS NULL 
+                                THEN 'NA' 
+                                ELSE DATE_FORMAT(qaar.date_of_release, '%d-%m-%Y') 
+                            END AS date_of_release
+        ", false);
+        
+        $this->db->from('stage_one_dhr_order_information o');
+        $this->db->join('stage_one_dhr_manufacturing_process m', 'o.id = m.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_quality_control_process q', 'o.id = q.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_bill_of_material b', 'o.id = b.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_finished_goods_reconciliation fgr', 'o.id = fgr.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_finished_goods_transfer_note fgtn', 'o.id = fgtn.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_qa_approval_and_release qaar', 'o.id = qaar.dhr_id', 'left');
+        
+        // Search functionality
+        if(!empty($search)){
+            $this->db->group_start();
+            $this->db->like('o.dhr', $search);
+            $this->db->or_like('o.batchorlot', $search);
+            $this->db->or_like('o.product_description', $search);
+            $this->db->or_like('o.itemcode', $search);
+            $this->db->or_like('o.stage', $search);
+            $this->db->group_end();
+        }
+        
+        $this->db->group_by('o.id');
+        $this->db->order_by($order_column, $order_dir);
+        $this->db->limit($length, $start);
+        
+        $query = $this->db->get();
+        return $query->result_array();
+    }
+    
+    function get_qa_report_total_count(){
+        $this->db->select('COUNT(DISTINCT o.id) as total');
+        $this->db->from('stage_one_dhr_order_information o');
+        $this->db->join('stage_one_dhr_manufacturing_process m', 'o.id = m.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_quality_control_process q', 'o.id = q.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_bill_of_material b', 'o.id = b.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_finished_goods_reconciliation fgr', 'o.id = fgr.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_finished_goods_transfer_note fgtn', 'o.id = fgtn.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_qa_approval_and_release qaar', 'o.id = qaar.dhr_id', 'left');
+        
+        $query = $this->db->get();
+        return $query->row()->total;
+    }
+    
+    function get_qa_report_filtered_count($search){
+        $this->db->select('COUNT(DISTINCT o.id) as total');
+        $this->db->from('stage_one_dhr_order_information o');
+        $this->db->join('stage_one_dhr_manufacturing_process m', 'o.id = m.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_quality_control_process q', 'o.id = q.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_bill_of_material b', 'o.id = b.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_finished_goods_reconciliation fgr', 'o.id = fgr.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_finished_goods_transfer_note fgtn', 'o.id = fgtn.dhr_id', 'left');
+        $this->db->join('stage_one_dhr_qa_approval_and_release qaar', 'o.id = qaar.dhr_id', 'left');
+        
+        // Search functionality
+        if(!empty($search)){
+            $this->db->group_start();
+            $this->db->like('o.dhr', $search);
+            $this->db->or_like('o.batchorlot', $search);
+            $this->db->or_like('o.product_description', $search);
+            $this->db->or_like('o.itemcode', $search);
+            $this->db->or_like('o.stage', $search);
+            $this->db->group_end();
+        }
+        
+        $query = $this->db->get();
+        return $query->row()->total;
+    }
+    
     function get_bom_details(){
         $item_wise_bom = $this->db->list_fields('item_wise_bom');
       
